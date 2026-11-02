@@ -2,36 +2,57 @@ package main
 
 import (
 	"fmt"
-	"net/http"
+	"net"
+	"strings"
 )
 
 func main() {
 	fmt.Println("Listening on port 6379")
 
-	l, err := net.Listen("tcp", ":6379")
+	l, err := net.Listen("tcp", ":6380")
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer l.Close()
 
 	
-	conn, err := l.accept()
+	conn, err := l.Accept()
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer conn.Close()
 
 	for {
-		buf := make([]byte, 1024)
-		n, err := conn.Read(buf)
-		if err = io.EOF {
-			break
+		resp := NewResp(conn)
+		value, err := resp.Read()
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
-		fmt.Println("error reading from client: ", err.Error())
-        os.Exit(1)
-
-
-		fmt.Println(string(buf[:n]))
-		conn.Write([]byte("+OK\r\n"))
+	
+		if value.typ != "array" {
+			fmt.Println("Invalid request, expected array")
+			continue
+		}
+	
+		if len(value.array) == 0 {
+			fmt.Println("Invalid request, expected array length > 0")
+			continue
+		}
+	
+		command := strings.ToUpper(value.array[0].bulk)
+		args := value.array[1:]
+	
+		writer := NewWriter(conn)
+	
+		handler, ok := Handlers[command]
+		if !ok {
+			fmt.Println("Invalid command: ", command)
+			writer.Write(Value{typ: "string", str: ""})
+			continue
+		}
+	
+		result := handler(args)
+		writer.Write(result)
 	}
 }
